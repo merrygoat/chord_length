@@ -2,7 +2,8 @@ from typing import List
 
 import numpy as np
 from scipy.spatial.distance import cdist
-from tqdm import tqdm
+from tqdm import trange
+
 
 def read_xyz(file_name: str) -> List[np.ndarray]:
     """
@@ -34,25 +35,36 @@ def write_xyz(data: np.ndarray, file_name: str = "output.xyz"):
                     output_file.write("{}\t{}\t{}\t{}\n".format(x, y, z, data[x, y, z]))
 
 
+def map_gel_density(cell_size: float, distance_cutoff_sq: float, frame: np.ndarray) -> np.ndarray:
+    """Coarse grain the density of the system.
+    :param cell_size: Side length of the cells used to grid the simulation box.
+    :param distance_cutoff_sq: Distance over which to measure the local density.
+    :param frame: A 3 by N frame of particle coordinates.
+    """
+
+    half_cell = cell_size / 2
+
+    x_cells = int(np.ceil((np.max(frame[:, 0]) - np.min(frame[:, 0])) / cell_size))
+    y_cells = int(np.ceil((np.max(frame[:, 1]) - np.min(frame[:, 1])) / cell_size))
+    z_cells = int(np.ceil((np.max(frame[:, 2]) - np.min(frame[:, 2])) / cell_size))
+    density = np.zeros((x_cells, y_cells, z_cells), dtype=int)
+    for x in trange(x_cells):
+        for y in range(y_cells):
+            for z in range(z_cells):
+                cell_coords = np.array([x, y, z]) * cell_size + half_cell
+                distances = cdist(cell_coords[np.newaxis, :], frame, metric="sqeuclidean")
+                density[x, y, z] = np.count_nonzero(distances < distance_cutoff_sq)
+    density = density / np.max(density)
+    density = 1 - density
+    return density
+
+
 def main(file_name: str, cell_size: float, distance_cutoff: float):
     data = read_xyz(file_name)
-    half_cell = cell_size / 2
     distance_cutoff_sq = distance_cutoff * distance_cutoff
     for frame in data:
-        x_cells = int(np.ceil((np.max(frame[:, 0]) - np.min(frame[:, 0])) / cell_size))
-        y_cells = int(np.ceil((np.max(frame[:, 1]) - np.min(frame[:, 1])) / cell_size))
-        z_cells = int(np.ceil((np.max(frame[:, 2]) - np.min(frame[:, 2])) / cell_size))
-        density = np.zeros((x_cells, y_cells, z_cells), dtype=int)
-
-        for x in tqdm(range(x_cells)):
-            for y in range(y_cells):
-                for z in range(z_cells):
-                    cell_coords = np.array([x, y, z]) * cell_size + half_cell
-                    distances = cdist(cell_coords[np.newaxis, :], frame, metric="sqeuclidean")
-                    density[x, y, z] = np.count_nonzero(distances < distance_cutoff_sq)
-        density = density / np.max(density)
-        density = 1 - density
-        write_xyz(density)
+        density_map = map_gel_density(cell_size, distance_cutoff_sq, frame)
+        write_xyz(density_map)
 
 
 main("sample_data/gel_frame.xyz", 0.5, 1)
