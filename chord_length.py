@@ -47,7 +47,7 @@ def main(file_name: str, cell_size: float, distance_cutoff: float):
         for x in tqdm(range(x_cells)):
             for y in range(y_cells):
                 for z in range(z_cells):
-                    cell_coords = np.array([x, y, z]) + half_cell
+                    cell_coords = np.array([x, y, z]) * cell_size + half_cell
                     distances = cdist(cell_coords[np.newaxis, :], frame, metric="sqeuclidean")
                     density[x, y, z] = np.count_nonzero(distances < distance_cutoff_sq)
         density = density / np.max(density)
