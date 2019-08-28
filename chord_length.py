@@ -1,8 +1,8 @@
 from typing import List
 
 import numpy as np
-from tqdm import trange
-from numba import jit
+from tqdm import trange, tqdm
+from numba import jit, float32
 
 
 def read_xyz(file_name: str) -> List[np.ndarray]:
@@ -35,12 +35,12 @@ def write_xyz(data: np.ndarray, file_name: str = "output.xyz"):
                     output_file.write("{}\t{}\t{}\t{}\n".format(x, y, z, data[x, y, z]))
 
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def build_distance_array(frame, cell_coord, x_len, y_len, z_len):
     # build a reduced distance array, taking into account PBCs
-    dist_x = np.abs(frame[:, 0] - cell_coord[0])
-    dist_y = np.abs(frame[:, 1] - cell_coord[1])
-    dist_z = np.abs(frame[:, 2] - cell_coord[2])
+    dist_x = np.abs(frame[:, :, :, 0] - cell_coord[0])
+    dist_y = np.abs(frame[:, :, :, 1] - cell_coord[1])
+    dist_z = np.abs(frame[:, :, :, 2] - cell_coord[2])
     dist_x[dist_x > (x_len / 2)] = x_len - dist_x[dist_x > (x_len / 2)]
     dist_y[dist_y > (y_len / 2)] = y_len - dist_y[dist_y > (y_len / 2)]
     dist_z[dist_z > (z_len / 2)] = z_len - dist_z[dist_z > (z_len / 2)]
@@ -64,12 +64,14 @@ def map_gel_density(cell_size: float, distance_cutoff_sq: float, frame: np.ndarr
     cell_z = z_len / num_z_cells
 
     local_density = np.zeros((num_x_cells, num_y_cells, num_z_cells))
-    for x in trange(num_x_cells):
+    cell_coords = np.zeros((num_x_cells, num_y_cells, num_z_cells, 3))
+    for x in range(num_x_cells):
         for y in range(num_y_cells):
             for z in range(num_z_cells):
-                cell_coords = np.array([x * cell_x + cell_x / 2, y * cell_y + cell_y / 2, z * cell_z + cell_z / 2])
-                distances = build_distance_array(frame, cell_coords, x_len, y_len, z_len)
-                local_density[x, y, z] = np.count_nonzero(distances < distance_cutoff_sq)
+                cell_coords[x, y, z] = [x * cell_x + cell_x / 2, y * cell_y + cell_y / 2, z * cell_z + cell_z / 2]
+    for particle in tqdm(frame):
+        distances = build_distance_array(cell_coords, particle, x_len, y_len, z_len)
+        local_density += np.count_nonzero(distances < distance_cutoff_sq)
     local_density = local_density / np.max(local_density)
     local_density = 1 - local_density
     return local_density
