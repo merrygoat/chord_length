@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 from tqdm import tqdm
@@ -22,8 +22,11 @@ def read_xyz(file_name: str) -> List[np.ndarray]:
     return data
 
 
-def write_xyz(data: np.ndarray, lattice_size: np.ndarray, file_name: str = "output.xyz"):
+def write_xyz(data: np.ndarray, lattice_size: np.ndarray, file_name: Union[str, None]):
     """Write the density map to an XYZ file."""
+    if file_name is None:
+        file_name = "output.xyz"
+
     with open(file_name, 'w') as output_file:
         num_cells = data.shape[0] * data.shape[1] * data.shape[2]
         output_file.write("{}\n".format(num_cells))
@@ -54,7 +57,6 @@ def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.nd
     :param frame: A 3 by N frame of particle coordinates.
     :param side_lengths: The x, y, and z, box side lengths.
     """
-
     distance_cutoff_sq = distance_cutoff ** 2
     x_len, y_len, z_len = side_lengths
     num_x_cells = int(np.ceil(x_len / lattice_spacing))
@@ -80,12 +82,12 @@ def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.nd
     return local_density, lattice_spacing
 
 
-def main(file_name: str, cell_size: float, distance_cutoff: float, side_lengths: List[float]):
+def main(file_name: str, cell_size: float, distance_cutoff: float, side_lengths: List[float], output_path: str = None):
     data = read_xyz(file_name)
     for frame in data:
         density_map, lattice_spacing = map_gel_density(cell_size, distance_cutoff, frame, side_lengths)
-        write_xyz(density_map, lattice_spacing)
+        write_xyz(density_map, lattice_spacing, output_path)
 
 
 if __name__ == '__main__':
-    main("sample_data/gel_frame.xyz", 0.5, 1, [36.840315, 36.840315, 36.840315])
+    main("test_data/gel_frame.xyz", 0.5, 1, [36.840315, 36.840315, 36.840315])
