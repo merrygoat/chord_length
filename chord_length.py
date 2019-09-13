@@ -1,8 +1,7 @@
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
-from tqdm import trange, tqdm
-from numba import jit, float32
+from tqdm import tqdm
 
 
 def read_xyz(file_name: str) -> List[np.ndarray]:
@@ -23,7 +22,7 @@ def read_xyz(file_name: str) -> List[np.ndarray]:
     return data
 
 
-def write_xyz(data: np.ndarray, file_name: str = "output.xyz"):
+def write_xyz(data: np.ndarray, lattice_size: np.ndarray, file_name: str = "output.xyz"):
     """Write the density map to an XYZ file."""
     with open(file_name, 'w') as output_file:
         num_cells = data.shape[0] * data.shape[1] * data.shape[2]
@@ -32,10 +31,10 @@ def write_xyz(data: np.ndarray, file_name: str = "output.xyz"):
         for x in range(data.shape[0]):
             for y in range(data.shape[1]):
                 for z in range(data.shape[2]):
-                    output_file.write("{}\t{}\t{}\t{}\n".format(x, y, z, data[x, y, z]))
+                    output_file.write("{}\t{}\t{}\t{}\n".format(x * lattice_size[0], y * lattice_size[1],
+                                                                z * lattice_size[2], data[x, y, z]))
 
 
-#@jit(nopython=True)
 def build_distance_array(frame, cell_coord, x_len, y_len, z_len):
     # build a reduced distance array, taking into account PBCs
     dist_x = np.abs(frame[:, :, :, 0] - cell_coord[0])
@@ -48,41 +47,44 @@ def build_distance_array(frame, cell_coord, x_len, y_len, z_len):
     return dist_xyz
 
 
-def map_gel_density(cell_size: float, distance_cutoff_sq: float, frame: np.ndarray, side_lengths: List[float]) -> np.ndarray:
+def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.ndarray, side_lengths: List[float]) -> Tuple[np.ndarray, np.ndarray]:
     """Coarse grain the density of the system.
-    :param cell_size: Side length of the cells used to grid the simulation box.
-    :param distance_cutoff_sq: Distance over which to measure the local density.
+    :param lattice_spacing: Side length of the lattice used to grid the simulation box.
+    :param distance_cutoff: Distance over which to measure the local density.
     :param frame: A 3 by N frame of particle coordinates.
     :param side_lengths: The x, y, and z, box side lengths.
     """
+
+    distance_cutoff_sq = distance_cutoff ** 2
     x_len, y_len, z_len = side_lengths
-    num_x_cells = int(np.ceil(x_len / cell_size))
-    num_y_cells = int(np.ceil(y_len / cell_size))
-    num_z_cells = int(np.ceil(z_len / cell_size))
-    cell_x = x_len / num_x_cells
-    cell_y = y_len / num_y_cells
-    cell_z = z_len / num_z_cells
+    num_x_cells = int(np.ceil(x_len / lattice_spacing))
+    num_y_cells = int(np.ceil(y_len / lattice_spacing))
+    num_z_cells = int(np.ceil(z_len / lattice_spacing))
+    lattice_spacing = np.array([x_len / num_x_cells, y_len / num_y_cells, z_len / num_z_cells])
 
     local_density = np.zeros((num_x_cells, num_y_cells, num_z_cells))
-    cell_coords = np.zeros((num_x_cells, num_y_cells, num_z_cells, 3))
-    for x in range(num_x_cells):
-        for y in range(num_y_cells):
-            for z in range(num_z_cells):
-                cell_coords[x, y, z] = [x * cell_x + cell_x / 2, y * cell_y + cell_y / 2, z * cell_z + cell_z / 2]
-    for particle in tqdm(frame):
-        distances = build_distance_array(cell_coords, particle, x_len, y_len, z_len)
-        local_density += np.count_nonzero(distances < distance_cutoff_sq)
+    # Set up the lattice points where the density will be measured.
+    lattice_coords = np.array([(x, y, z) for x in range(num_x_cells) for y in range(num_y_cells) for z in range(num_z_cells)]) * lattice_spacing
+    lattice_coords = np.reshape(lattice_coords, (num_x_cells, num_y_cells, num_z_cells, 3))
+
+    for particle_coords in tqdm(frame):
+        min_coords = particle_coords - distance_cutoff
+        min_indices = np.floor(min_coords / lattice_spacing).astype(int)
+        max_coords = particle_coords + distance_cutoff
+        max_indices = np.ceil(max_coords / lattice_spacing).astype(int)
+        distances = build_distance_array(lattice_coords[min_indices[0]:max_indices[0], min_indices[1]:max_indices[1], min_indices[2]:max_indices[2]],
+                                         particle_coords, x_len, y_len, z_len)
+        local_density[min_indices[0]:max_indices[0], min_indices[1]: max_indices[1], min_indices[2]: max_indices[2]] += distances < distance_cutoff_sq
     local_density = local_density / np.max(local_density)
     local_density = 1 - local_density
-    return local_density
+    return local_density, lattice_spacing
 
 
 def main(file_name: str, cell_size: float, distance_cutoff: float, side_lengths: List[float]):
     data = read_xyz(file_name)
-    distance_cutoff_sq = distance_cutoff * distance_cutoff
     for frame in data:
-        density_map = map_gel_density(cell_size, distance_cutoff_sq, frame, side_lengths)
-        write_xyz(density_map)
+        density_map, lattice_spacing = map_gel_density(cell_size, distance_cutoff, frame, side_lengths)
+        write_xyz(density_map, lattice_spacing)
 
 
 if __name__ == '__main__':
