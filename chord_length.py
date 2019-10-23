@@ -1,6 +1,7 @@
 from typing import List, Tuple, Union
 
 import numpy as np
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 
@@ -78,17 +79,35 @@ def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.nd
                                          particle_coords, x_len, y_len, z_len)
         local_density[min_indices[0]:max_indices[0], min_indices[1]: max_indices[1], min_indices[2]: max_indices[2]] += distances < distance_cutoff_sq
     local_density = local_density / np.max(local_density)
+    plt.hist(local_density.flatten(), bins=100)
+    plt.show()
     return local_density, lattice_spacing
 
 
 def count_chords(density_map):
     gel_sol_threshold = 0.3
-    density_map = density_map[density_map < gel_sol_threshold]
+    density_map = density_map < gel_sol_threshold
+    x_chord_histogram = []
+    y_chord_histogram = []
+    z_chord_histogram = []
+    for coord_1 in tqdm(range(density_map.shape[0])):
+        for coord_2 in range(density_map.shape[1]):
+            x_chord_histogram.extend(list(histogram_contiguous_lengths(density_map[:, coord_1, coord_2])))
+            y_chord_histogram.extend(list(histogram_contiguous_lengths(density_map[coord_1, :, coord_2])))
+            z_chord_histogram.extend(list(histogram_contiguous_lengths(density_map[coord_1, coord_2, :])))
+    plt.hist(x_chord_histogram, bins=np.arange(max(z_chord_histogram)), alpha=0.3, label="x")
+    plt.hist(y_chord_histogram, bins=np.arange(max(z_chord_histogram)), alpha=0.3, label="y")
+    plt.hist(z_chord_histogram, bins=np.arange(max(z_chord_histogram)), alpha=0.3, label="z")
+    plt.xlabel("Chord Length")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.title("Non-periodic chords in each dimension.")
 
 
 def histogram_contiguous_lengths(data: np.ndarray):
-    contiguous_lengths = (np.diff(np.where(np.concatenate(([data[0]], data[:-1] != data[1:], [True])))[0]))
-    if len(contiguous_lengths) % 2:
+    contiguous_lengths = np.diff(np.concatenate(([0], np.where(np.concatenate(([data[0]], data[:-1] != data[1:], [True])))[0])))
+    contiguous_lengths = contiguous_lengths[contiguous_lengths.nonzero()]
+    if len(contiguous_lengths) % 2 and len(contiguous_lengths) > 1:
         contiguous_lengths[0] += contiguous_lengths[-1]
         contiguous_lengths = contiguous_lengths[:-1]
     return contiguous_lengths

@@ -34,7 +34,46 @@ class TestNegativeIndexing:
         assert np.array_equal(subset, expected)
 
 
-def test_group_by():
-    data = np.array([1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1])
-    expected = np.array([5, 2, 3, 2])
-    assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
+class TestGroupBy:
+    @staticmethod
+    def test_single_value_overlap():
+        data = np.array([1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1])
+        expected = np.array([5, 2, 3, 2])
+        assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
+
+    @staticmethod
+    def test_zero_start_multi_value_overlap():
+        data = np.array([0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0])
+        expected = np.array([6, 2, 2, 2])
+        assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
+
+
+    @staticmethod
+    def test_one_start_multi_value_overlap():
+        data = np.array([1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1])
+        expected = np.array([6, 2, 3, 2])
+        assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
+
+    @staticmethod
+    def test_no_overlap():
+        data = np.array([1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0])
+        expected = np.array([4, 2, 3, 3])
+        assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
+
+    @staticmethod
+    def test_two_runs_no_overlap():
+        data = np.array([1, 1, 1, 0, 0])
+        expected = np.array([3, 2])
+        assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
+
+    @staticmethod
+    def test_single_ones():
+        data = np.array([1, 1, 1, 1, 1])
+        expected = np.array([5])
+        assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
+
+    @staticmethod
+    def test_single_zeroes():
+        data = np.array([0, 0, 0, 0, 0])
+        expected = np.array([5])
+        assert np.array_equal(chord_length.histogram_contiguous_lengths(data), expected)
