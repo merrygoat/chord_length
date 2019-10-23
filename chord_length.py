@@ -78,15 +78,29 @@ def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.nd
                                          particle_coords, x_len, y_len, z_len)
         local_density[min_indices[0]:max_indices[0], min_indices[1]: max_indices[1], min_indices[2]: max_indices[2]] += distances < distance_cutoff_sq
     local_density = local_density / np.max(local_density)
-    local_density = 1 - local_density
     return local_density, lattice_spacing
 
 
+def count_chords(density_map):
+    gel_sol_threshold = 0.3
+    density_map = density_map[density_map < gel_sol_threshold]
+
+
+def histogram_contiguous_lengths(data: np.ndarray):
+    contiguous_lengths = (np.diff(np.where(np.concatenate(([data[0]], data[:-1] != data[1:], [True])))[0]))
+    if len(contiguous_lengths) % 2:
+        contiguous_lengths[0] += contiguous_lengths[-1]
+        contiguous_lengths = contiguous_lengths[:-1]
+    return contiguous_lengths
+
+
 def main(file_name: str, cell_size: float, distance_cutoff: float, side_lengths: List[float], output_path: str = None):
+
     data = read_xyz(file_name)
     for frame in data:
         density_map, lattice_spacing = map_gel_density(cell_size, distance_cutoff, frame, side_lengths)
         write_xyz(density_map, lattice_spacing, output_path)
+        count_chords(density_map)
 
 
 if __name__ == '__main__':
