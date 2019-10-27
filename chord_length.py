@@ -35,8 +35,7 @@ def write_xyz(data: np.ndarray, lattice_size: np.ndarray, file_name: Union[str, 
         for x in range(data.shape[0]):
             for y in range(data.shape[1]):
                 for z in range(data.shape[2]):
-                    output_file.write("{}\t{}\t{}\t{}\n".format(x * lattice_size[0], y * lattice_size[1],
-                                                                z * lattice_size[2], data[x, y, z]))
+                    output_file.write(f"{x * lattice_size[0]}\t{y * lattice_size[1]}\t{z * lattice_size[2]}\t{data[x, y, z]}\n")
 
 
 def build_distance_array(frame, cell_coord, x_len, y_len, z_len):
@@ -58,6 +57,7 @@ def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.nd
     :param frame: A 3 by N frame of particle coordinates.
     :param side_lengths: The x, y, and z, box side lengths.
     """
+    tqdm.write("Calculating local density.")
     distance_cutoff_sq = distance_cutoff ** 2
     x_len, y_len, z_len = side_lengths
     num_x_cells = int(np.ceil(x_len / lattice_spacing))
@@ -78,15 +78,16 @@ def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.nd
         distances = build_distance_array(lattice_coords[min_indices[0]:max_indices[0], min_indices[1]:max_indices[1], min_indices[2]:max_indices[2]],
                                          particle_coords, x_len, y_len, z_len)
         local_density[min_indices[0]:max_indices[0], min_indices[1]: max_indices[1], min_indices[2]: max_indices[2]] += distances < distance_cutoff_sq
-    local_density = local_density / np.max(local_density)
+    local_density = local_density * 3 / (4 * np.pi)
     plt.hist(local_density.flatten(), bins=100)
     plt.show()
     return local_density, lattice_spacing
 
 
 def count_chords(density_map):
+    tqdm.write("Counting chord lengths.")
     gel_sol_threshold = 0.3
-    density_map = density_map < gel_sol_threshold
+    density_map = density_map > gel_sol_threshold
     x_chord_histogram = []
     y_chord_histogram = []
     z_chord_histogram = []
@@ -102,6 +103,7 @@ def count_chords(density_map):
     plt.ylabel("Frequency")
     plt.legend()
     plt.title("Non-periodic chords in each dimension.")
+    plt.show()
 
 
 def histogram_contiguous_lengths(data: np.ndarray):
@@ -113,13 +115,35 @@ def histogram_contiguous_lengths(data: np.ndarray):
     return contiguous_lengths
 
 
-def main(file_name: str, cell_size: float, distance_cutoff: float, side_lengths: List[float], output_path: str = None):
+def density_smoothing(density_map: np.ndarray):
+    """Smooths density map by averaging each point with its neighbours."""
+    tqdm.write("Smoothing local density.")
+    for x in tqdm(range(density_map.shape[0])):
+        for y in range(density_map.shape[1]):
+            for z in range(density_map.shape[2]):
+                density_map[x, y, z] = 1 / 8 * (2 * density_map[x, y, z]
+                                                + density_map[(x + 1) % density_map.shape[0], y, z]
+                                                + density_map[x, (y + 1) % density_map.shape[1], z]
+                                                + density_map[x, y, (z + 1) % density_map.shape[2]]
+                                                + density_map[(x - 1) % density_map.shape[0], y, z]
+                                                + density_map[x, (y - 1) % density_map.shape[1], z]
+                                                + density_map[x, y, (z - 1) % density_map.shape[2]])
+    plt.hist(density_map.flatten(), bins=30)
+    plt.show()
+    return density_map
+
+
+def main(file_name: str, cell_size: float, distance_cutoff: float,
+         side_lengths: List[float], output_path: str = None, output_xyz: bool = False):
 
     data = read_xyz(file_name)
     for frame in data:
-        density_map, lattice_spacing = map_gel_density(cell_size, distance_cutoff, frame, side_lengths)
-        write_xyz(density_map, lattice_spacing, output_path)
-        count_chords(density_map)
+        density_map, lattice_spacing = map_gel_density(cell_size, distance_cutoff,
+                                                       frame, side_lengths)
+        smoothed_density = density_smoothing(density_map)
+        if output_xyz:
+            write_xyz(smoothed_density, lattice_spacing, output_path)
+        count_chords(smoothed_density)
 
 
 if __name__ == '__main__':
