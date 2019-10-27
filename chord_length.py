@@ -1,8 +1,9 @@
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 import numpy as np
-import matplotlib.pyplot as plt
 from tqdm import tqdm
+
+import visualisation
 
 
 def read_xyz(file_name: str) -> List[np.ndarray]:
@@ -23,10 +24,11 @@ def read_xyz(file_name: str) -> List[np.ndarray]:
     return data
 
 
-def write_xyz(data: np.ndarray, lattice_size: np.ndarray, file_name: Union[str, None]):
-    """Write the density map to an XYZ file."""
-    if file_name is None:
-        file_name = "output.xyz"
+def write_density(data: np.ndarray, lattice_size: np.ndarray, file_name: str):
+    """Write the density map to an XYZ style file.
+    :param data: The particle positions and local density to be writen to file.
+    :param lattice_size: The side lengths if the lattice
+    :param file_name: The name of the file to write the data to."""
 
     with open(file_name, 'w') as output_file:
         num_cells = data.shape[0] * data.shape[1] * data.shape[2]
@@ -50,7 +52,8 @@ def build_distance_array(frame, cell_coord, x_len, y_len, z_len):
     return dist_xyz
 
 
-def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.ndarray, side_lengths: List[float]) -> Tuple[np.ndarray, np.ndarray]:
+def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.ndarray,
+                    side_lengths: List[float]) -> Tuple[np.ndarray, np.ndarray]:
     """Coarse grain the density of the system.
     :param lattice_spacing: Side length of the lattice used to grid the simulation box.
     :param distance_cutoff: Distance over which to measure the local density.
@@ -75,12 +78,13 @@ def map_gel_density(lattice_spacing: float, distance_cutoff: float, frame: np.nd
         min_indices = np.floor(min_coords / lattice_spacing).astype(int)
         max_coords = particle_coords + distance_cutoff
         max_indices = np.ceil(max_coords / lattice_spacing).astype(int)
-        distances = build_distance_array(lattice_coords[min_indices[0]:max_indices[0], min_indices[1]:max_indices[1], min_indices[2]:max_indices[2]],
-                                         particle_coords, x_len, y_len, z_len)
+        local_cell = lattice_coords[min_indices[0]:max_indices[0],
+                                    min_indices[1]:max_indices[1],
+                                    min_indices[2]:max_indices[2]]
+        distances = build_distance_array(local_cell, particle_coords, x_len, y_len, z_len)
         local_density[min_indices[0]:max_indices[0], min_indices[1]: max_indices[1], min_indices[2]: max_indices[2]] += distances < distance_cutoff_sq
     local_density = local_density * 3 / (4 * np.pi)
-    plt.hist(local_density.flatten(), bins=100)
-    plt.show()
+    visualisation.plot_density_histogram(local_density.flatten(), "Unsmoothed local density.")
     return local_density, lattice_spacing
 
 
@@ -88,22 +92,13 @@ def count_chords(density_map):
     tqdm.write("Counting chord lengths.")
     gel_sol_threshold = 0.3
     density_map = density_map > gel_sol_threshold
-    x_chord_histogram = []
-    y_chord_histogram = []
-    z_chord_histogram = []
+    chord_histogram = [[], [], []]
     for coord_1 in tqdm(range(density_map.shape[0])):
         for coord_2 in range(density_map.shape[1]):
-            x_chord_histogram.extend(list(histogram_contiguous_lengths(density_map[:, coord_1, coord_2])))
-            y_chord_histogram.extend(list(histogram_contiguous_lengths(density_map[coord_1, :, coord_2])))
-            z_chord_histogram.extend(list(histogram_contiguous_lengths(density_map[coord_1, coord_2, :])))
-    plt.hist(x_chord_histogram, bins=np.arange(max(z_chord_histogram)), alpha=0.3, label="x")
-    plt.hist(y_chord_histogram, bins=np.arange(max(z_chord_histogram)), alpha=0.3, label="y")
-    plt.hist(z_chord_histogram, bins=np.arange(max(z_chord_histogram)), alpha=0.3, label="z")
-    plt.xlabel("Chord Length")
-    plt.ylabel("Frequency")
-    plt.legend()
-    plt.title("Non-periodic chords in each dimension.")
-    plt.show()
+            chord_histogram[0].extend(list(histogram_contiguous_lengths(density_map[:, coord_1, coord_2])))
+            chord_histogram[1].extend(list(histogram_contiguous_lengths(density_map[coord_1, :, coord_2])))
+            chord_histogram[2].extend(list(histogram_contiguous_lengths(density_map[coord_1, coord_2, :])))
+    visualisation.plot_chord_length(chord_histogram)
 
 
 def histogram_contiguous_lengths(data: np.ndarray):
@@ -128,13 +123,13 @@ def density_smoothing(density_map: np.ndarray):
                                                 + density_map[(x - 1) % density_map.shape[0], y, z]
                                                 + density_map[x, (y - 1) % density_map.shape[1], z]
                                                 + density_map[x, y, (z - 1) % density_map.shape[2]])
-    plt.hist(density_map.flatten(), bins=30)
-    plt.show()
+    visualisation.plot_density_histogram(density_map.flatten(), "Smoothed density map")
     return density_map
 
 
 def main(file_name: str, cell_size: float, distance_cutoff: float,
-         side_lengths: List[float], output_path: str = None, output_xyz: bool = False):
+         side_lengths: List[float], output_path: str = "local_density.xyz",
+         output_xyz: bool = False):
 
     data = read_xyz(file_name)
     for frame in data:
@@ -142,7 +137,7 @@ def main(file_name: str, cell_size: float, distance_cutoff: float,
                                                        frame, side_lengths)
         smoothed_density = density_smoothing(density_map)
         if output_xyz:
-            write_xyz(smoothed_density, lattice_spacing, output_path)
+            write_density(smoothed_density, lattice_spacing, output_path)
         count_chords(smoothed_density)
 
 
